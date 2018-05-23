@@ -1,0 +1,37 @@
+﻿需要三台机器，线上机器、测试机器、辅助机器
+======================================================================
+线上机器安装tcp client
+1. git clone git://github.com/session-replay-tools/tcpcopy.git
+2. tar -zxvf tcpcopy.tar.gz 解压
+3. cd  tcpcopy
+4.  ./configure  --prefix=/usr/local/tcpcopy
+5.  make
+6.  make install
+
+======================================================================
+辅助机器安装tcp intercept
+1.  git clone https://github.com/session-replay-tools/intercept.git
+2. tar -zxvf intercept.tar.gz 解压
+3.  cd intercept/
+4.  ./configure
+5.  make
+6.  make install
+
+======================================================================
+测试机器上加路由
+1. route add -net 网段 netmask 255.255.255.0 gw 辅助机器ip
+解释：添加路由规则，将某个网段的数据发往指定的辅助机
+
+======================================================================
+启动辅助服务器intercept的tcpcopy server
+1. ./intercept -i eth0 -F 'tcp and src port 8080' -d
+将测试机8080端口发来的数据过滤出来处理
+
+======================================================================
+启动线上服务器的tcpcopy client
+1. ./tcpcopy -x 80-测试服务器ip:端口 -s 辅助服务器ip -c 62.135.200.x
+解释：将本机80端口收到的数据修改源IP到 62.135.200.0/24网段，发往测试服务器的80端口，连接intercept主机为辅助服务器
+
+======================================================================
+验证
+1. 客户端请求线上服务器接口，如果测试服务器有日志打印，说明环境部署成功

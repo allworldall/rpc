@@ -1,0 +1,937 @@
+﻿新增Type
+create or replace type number_list as table of number(10);
+
+=====================================================================================================================================================================================
+===================================================================  PKG_BALANCE 包新增function==================================================================================================
+
+PKG_BALANCE
+--新增方法，因反回数组
+    function getBalanceInfoEx1Adapt(
+            n_Game_ID                in  number,
+            n_User_ID                in  number,
+            n_Role_ID                in  number,
+            n_Rating_ID              in  number,
+            n_Max_Balance_Count      in  number,
+
+            n_Ret_Balance_Count      out number,
+            v_Ret_Balance_Info       out number_list
+        ) return integer;
+		
+	--新增方法，因反回数组
+    function getBalanceInfoEx1Adapt(
+        n_Game_ID                in  number,
+        n_User_ID                in  number,
+        n_Role_ID                in  number,
+        n_Rating_ID              in  number,
+        n_Max_Balance_Count      in  number,
+
+        n_Ret_Balance_Count      out number,
+        v_Ret_Balance_Info       out number_list
+    ) return integer is
+        n_Result        integer := PKG_UTIL.E_ERROR;
+
+        n_Tmp_Game_ID        UMS_ROLE.game_id%TYPE := 0;
+        s_Tmp_Option_Value   SYS_OPTION.Option_Value%TYPE;
+
+        n_Tmp_Major_Subject  UMS_USER_FUND.Subject_Id%TYPE;
+        n_Tmp_Major_Amount   UMS_USER_FUND.amount%TYPE;
+        n_Tmp_Major_Charge   LOG_USER_FUND_DETAIL.charge_amount%TYPE;
+        v_Balance_Info number_list :=number_list();
+        cursor
+            curCoinBalanceInfo(n_Tmp_Role_ID number,
+                               n_Tmp_User_ID number,
+                               n_Tmp_Rating_ID number,
+                               n_Tmp_Game_ID number
+                               )
+        is
+            select
+                t2.subject_id, sum(t2.amount) amount
+            from
+                ums_user_coin_fund t2
+            where
+                t2.rating_id = decode(n_Tmp_Rating_ID,0,t2.rating_id,n_Tmp_Rating_ID) and
+                t2.user_id = n_Tmp_User_ID and
+                t2.game_id = n_Tmp_Game_ID and
+                t2.role_id in (n_Tmp_Role_ID, 0) and
+                t2.subject_id <> 10
+            group by t2.subject_id
+            union
+            select
+                t2.subject_id, sum(t2.amount) amount
+            from
+                ums_user_coin_fund t2
+            where
+                t2.user_id = n_Tmp_User_ID and
+                t2.game_id = n_Tmp_Game_ID and
+                t2.role_id in (n_Tmp_Role_ID, 0) and
+                t2.subject_id = 10
+            group by t2.subject_id;
+        rowCoinBalanceInfo     curCoinBalanceInfo%ROWTYPE;
+    begin
+        if (
+            (n_Game_ID           is null) or
+            (n_User_ID           is null) or
+            (n_Role_ID           is null) or
+            (n_Rating_ID         is null) or
+            (n_Max_Balance_Count is null) or
+            (n_Max_Balance_Count <= 0)
+        ) then
+            n_Result := PKG_UTIL.E_PARAMETER_ERROR;
+            goto ExitError;
+        end if;
+
+        s_Tmp_Option_Value := PKG_OPTION.getOptionValue(
+                      n_Game_ID,
+                      PKG_OPTION.MAJOR_SUBJECT,
+                      PKG_OPTION.T_SUBJECT5
+                      );
+        begin
+            n_Tmp_Major_Subject := to_number(s_Tmp_Option_Value);
+        exception
+            when OTHERS then
+                n_Tmp_Major_Subject := 5;
+        end;
+
+        n_Ret_Balance_Count := 0;
+
+        begin
+            select
+                game_id
+            into
+                n_Tmp_Game_ID
+            from
+                UMS_ROLE
+            where
+                role_id    = n_Role_ID;
+        exception
+            when NO_DATA_FOUND then
+                n_Result := PKG_UTIL.E_ROLE_NOT_EXIST;
+                goto ExitError;
+            when TOO_MANY_ROWS then
+                n_Result := PKG_UTIL.E_ROLE_DUPLICATED;
+                goto ExitError;
+        end;
+
+        begin
+            select
+                nvl(sum(t1.charge_amount),0)
+            into
+                n_Tmp_Major_Charge
+            from
+                log_user_fund_detail t1
+            where
+                t1.subject_id = n_Tmp_Major_Subject and
+                t1.rating_id = decode(n_Rating_ID,0,t1.rating_id,n_Rating_ID) and
+                t1.user_id = n_User_ID and
+                t1.game_id = n_Tmp_Game_ID;
+        end;
+
+        begin
+            select
+                nvl(sum(t2.amount),0)
+            into
+                n_Tmp_Major_Amount
+            from
+                ums_user_fund t2
+            where
+                t2.subject_id = n_Tmp_Major_Subject and
+                t2.rating_id = decode(n_Rating_ID,0,t2.rating_id,n_Rating_ID) and
+                t2.user_id = n_User_ID and
+                t2.game_id = n_Tmp_Game_ID;
+        end;
+        v_Balance_Info.Extend;
+        v_Balance_Info(1) := n_Tmp_Major_Subject;
+        v_Balance_Info.Extend;
+        v_Balance_Info(2) := n_Tmp_Major_Charge;
+        v_Balance_Info.Extend;
+        v_Balance_Info(3) := n_Tmp_Major_Amount;
+        n_Ret_Balance_Count := n_Ret_Balance_Count +1;
+
+        for rowCoinBalanceInfo in curCoinBalanceInfo(n_Role_ID, n_User_ID, n_Rating_ID, n_Tmp_Game_ID) loop
+            if (n_Ret_Balance_Count >= n_Max_Balance_Count) then
+                n_Result := PKG_UTIL.E_BALANCE_TOO_MANY_SUBJECTS;
+                goto ExitError;
+            end if;
+            v_Balance_Info.Extend;
+            v_Balance_Info(n_Ret_Balance_Count*3+1) := rowCoinBalanceInfo.subject_id;
+            v_Balance_Info.Extend;
+            v_Balance_Info(n_Ret_Balance_Count*3+2) := 0;
+            v_Balance_Info.Extend;
+            v_Balance_Info(n_Ret_Balance_Count*3+3) := rowCoinBalanceInfo.amount;
+
+            n_Ret_Balance_Count := n_Ret_Balance_Count + 1;
+        end loop;
+        v_Ret_Balance_Info := v_Balance_Info;
+        n_Result := PKG_UTIL.S_SUCCESS;
+    <<ExitError>>
+        return n_Result;
+    end;
+====================================================================================================================================================================================
+=================================================================== PKG_ROLE 包新增function ==================================================================================================
+
+
+PKG_ROLE
+
+--java使用类型
+     function leaveGameAdapt(
+        n_Game_ID           in  number,     -- 2
+        n_Role_ID           in  number,     -- 3
+        n_Gateway_ID        in  number,     -- 4
+        n_Logout_Flag       in  number,     -- 5
+        n_Role_Level        in  number,     -- 6
+        n_Community_ID      in  number,     -- 7
+        n_Occupation        in  number,     -- 8
+        n_Money1            in  number,     -- 9
+        n_Money2            in  number,     -- 10
+        n_Experience        in  number,     -- 11
+        n_Max_Balance_Count in  number,     -- 12
+
+        n_Ret_Balance_Count out number,     -- 13
+        v_Ret_Balance_Info  out number_list  -- 14
+    ) return integer;
+	
+	
+	function leaveGameAdapt(
+        n_Game_ID           in  number,     -- 2
+        n_Role_ID           in  number,     -- 3
+        n_Gateway_ID        in  number,     -- 4
+        n_Logout_Flag       in  number,     -- 5
+        n_Role_Level        in  number,     -- 6
+        n_Community_ID      in  number,     -- 7
+        n_Occupation        in  number,     -- 8
+        n_Money1            in  number,     -- 9
+        n_Money2            in  number,     -- 10
+        n_Experience        in  number,     -- 11
+        n_Max_Balance_Count in  number,     -- 12
+
+        n_Ret_Balance_Count out number,     -- 13
+        v_Ret_Balance_Info  out number_list  -- 14
+    ) return integer is
+        n_Result             integer := PKG_UTIL.E_ERROR;
+        n_RetCode            integer := PKG_UTIL.E_ERROR;
+        n_Tmp_Adult_Flag     number := 0;
+        n_Tmp_Remain_Seconds number := PKG_UTIL.DF_MAX_VALUABLE_SECONDS;
+
+        n_Tmp_Community_ID   UMS_ROLE.nationality_id%TYPE := 0;
+        n_Tmp_User_ID        UMS_ROLE.user_id%TYPE;
+        n_Tmp_Gateway_ID     UMS_ROLE.gateway_id%TYPE;
+        n_Tmp_Game_ID        UMS_ROLE.game_id%TYPE := 0;
+        n_Tmp_Role_State     UMS_ROLE.role_state%TYPE;
+        n_Tmp_Login_ID       UMS_ROLE.login_id%TYPE;
+        n_Tmp_Server_ID      LOG_RECORD_DETAIL.server_id%TYPE;
+        n_Tmp_Online_Second  UMS_ROLE.total_online_second%TYPE := 0;
+
+        n_Tmp_User_IP        LOG_RECORD_DETAIL.login_ip%TYPE;
+        s_Tmp_Province_Code  LOG_RECORD_DETAIL.province_code%TYPE := '其它';
+        s_Tmp_City_Code      LOG_RECORD_DETAIL.city_code%TYPE := '其它';
+
+        d_Tmp_Leave_Time     UMS_ROlE.last_logout_time%TYPE := sysdate;
+        s_Role_GW_Check      SYS_OPTION.option_value%type;
+        s_Global_Recharge    SYS_OPTION.option_value%type;
+        n_Tmp_Total_Charge   number := 0;
+        n_Tmp_Subject_ID     UMS_USER_FUND.subject_id%TYPE;
+        s_Tmp_Major_Subject  SYS_OPTION.option_value%TYPE;
+        v_Balance_Info number_list :=number_list();
+    begin
+        -- Parameters validation.
+        --v_Ret_Balance_Info;
+        if (
+            (n_Game_ID     is null) or
+            (n_Role_ID     is null) or
+            (n_Logout_Flag is null) or
+            ( n_Logout_Flag not in (1,2,3) ) or -- 1-normal, 2-payment, 3-abnormal.
+            (n_Role_Level  is null) or
+            (n_Occupation  is null) or
+            (n_Money1      is null) or
+            (n_Money2      is null) or
+            (n_Experience  is null)
+        ) then
+            n_Result := PKG_UTIL.E_PARAMETER_ERROR;
+            goto ExitError;
+        end if;
+        n_Ret_Balance_Count := 0;
+        -- check whether the MSG_LEAVE_GAME is legal.
+        begin
+            select
+                user_id,       role_state,       login_id,       nationality_id,
+                  gateway_id,  game_id
+            into
+                n_Tmp_User_ID, n_Tmp_Role_State, n_Tmp_Login_ID, n_Tmp_Community_ID,
+                  n_Tmp_Gateway_ID, n_Tmp_Game_ID
+            from
+                UMS_ROLE
+            where
+                role_id    = n_Role_ID;
+        exception
+            when NO_DATA_FOUND then
+                n_Result := PKG_UTIL.E_ROLE_NOT_EXIST;
+                goto ExitError;
+            when TOO_MANY_ROWS then
+                n_Result := PKG_UTIL.E_ROLE_DUPLICATED;
+                goto ExitError;
+        end;
+
+        s_Role_GW_Check := PKG_OPTION.getOptionValue(
+            n_Tmp_Game_ID,
+            PKG_OPTION.ROLE_GW_CHECK,
+            PKG_OPTION.R_OPENED
+        );
+        if (s_Role_GW_Check = PKG_OPTION.R_OPENED) then
+            if(n_Tmp_Gateway_ID <> n_Gateway_ID) then
+                n_Result := PKG_UTIL.E_ROLE_NOT_EXIST;
+                goto ExitError;
+            end if;
+        else
+            -- 角色可能不在其本身的网关登录，需要检测目标网关是否存在
+            n_RetCode := PKG_GATEWAY.isGatewayIDExisted(n_Tmp_Game_ID, n_Gateway_ID);
+            if (n_RetCode <> PKG_UTIL.S_SUCCESS) then
+                n_Result := n_RetCode;
+                goto ExitError;
+            end if;
+        end if;
+
+        -- check whether the role has been deleted.
+        if (n_Tmp_Role_State = PKG_UTIL.DF_ROLE_STATE_DELETED) then
+            n_Result := PKG_UTIL.E_ROLE_DELETED;
+            goto ExitError;
+        end if;
+        -- calculate indulgence time.
+        n_RetCode := PKG_INDULGENCE.onLeave(
+            n_Tmp_Game_ID,
+            n_Tmp_User_ID,
+            n_Logout_Flag,
+            n_Gateway_ID,
+            n_Tmp_Adult_Flag,
+            n_Tmp_Remain_Seconds
+        );
+        if (n_RetCode <> PKG_UTIL.S_SUCCESS) then
+            n_Result := n_RetCode;
+            goto ExitError;
+        end if;
+        -- return indulgence time.
+        if (n_Tmp_Adult_Flag = 0) then
+            v_Balance_Info.Extend;
+            v_Balance_Info(1) := PKG_UTIL.DF_SUBJECT_ID_VALUABLE_TIME; -- 100
+            v_Balance_Info.Extend;
+            v_Balance_Info(2) := n_Tmp_Remain_Seconds;
+            n_Ret_Balance_Count := 1;
+        end if;
+
+        if (n_Logout_Flag = 2) then
+            -- update role's attributes.
+            update
+                UMS_ROLE
+            set
+                role_level          = n_Role_Level,
+                nationality_id      = nvl(n_Community_ID, n_Tmp_Community_ID),
+                role_occupation     = n_Occupation,
+                money1              = n_Money1,
+                money2              = n_Money2,
+                experience          = n_Experience
+            where
+                role_id = n_Role_ID and
+                game_id = n_Tmp_Game_ID;
+        elsif ( n_Logout_Flag in (1,3) ) then
+            if (n_Tmp_Login_ID = 0) then
+                --if not find loginId, so can't update, insert a new record.
+                n_RetCode := PKG_LOG.logLogoutAbnormal(
+                    n_Tmp_Game_ID,
+                    n_Gateway_ID,
+                    n_Tmp_User_ID,
+                    n_Role_ID,
+                    n_Role_Level,
+                    n_Money1,
+                    n_Money2,
+                    n_Experience
+                );
+            else
+                -- We must record logout information in LOG_RECORD_DETAIL.
+                n_RetCode := PKG_LOG.logLogout(
+                    n_Tmp_Login_ID,
+                    n_Role_Level,
+                    n_Money1,
+                    n_Money2,
+                    n_Experience,
+                    n_Tmp_Server_ID,
+                    n_Tmp_Online_Second,
+                    n_Tmp_User_IP,
+                    s_Tmp_Province_Code,
+                    s_Tmp_City_Code
+                );
+            end if;
+
+            if (n_Logout_Flag <> 3) then
+                -- update role's rich attributes.
+                update
+                    UMS_ROLE
+                set
+                    role_level          = n_Role_Level,
+                    nationality_id      = nvl(n_Community_ID, n_Tmp_Community_ID),
+                    role_occupation     = n_Occupation,
+                    login_id            = 0,
+                    last_logout_time    = d_Tmp_Leave_Time,
+                    total_online_second = total_online_second + n_Tmp_Online_Second,
+                    money1              = n_Money1,
+                    money2              = n_Money2,
+                    experience          = n_Experience
+                where
+                    role_id = n_Role_ID and
+                    game_id = n_Tmp_Game_ID;
+            end if;
+
+            -- minus `regional-online-role-count'.
+            if (n_Tmp_Login_ID > 0) then
+                n_RetCode := PKG_LOG.logRTOnlineStat(
+                    n_Tmp_Game_ID,
+                    n_Gateway_ID,
+                    n_Tmp_Server_ID,
+                    s_Tmp_Province_Code,
+                    s_Tmp_City_Code,
+                    -1
+                );
+            end if;
+        end if;
+
+        s_Tmp_Major_Subject := PKG_OPTION.getOptionValue(
+                    n_Tmp_Game_ID,
+                    PKG_OPTION.MAJOR_SUBJECT,
+                    null
+                    );
+
+        if (s_Tmp_Major_Subject is null) then
+            return PKG_UTIL.E_OPTION_CODE_NOT_EXIST;
+        end if;
+
+        if (s_Tmp_Major_Subject = PKG_OPTION.T_SUBJECT3) then
+            n_Tmp_Subject_ID := 3;
+        elsif (s_Tmp_Major_Subject = PKG_OPTION.T_SUBJECT5) then
+            n_Tmp_Subject_ID := 5;
+        else
+            return PKG_UTIL.E_OPTION_CODE_NOT_EXIST;
+        end if;
+
+        s_Global_Recharge := PKG_OPTION.getOptionValue(
+            n_Tmp_Game_ID,
+            PKG_OPTION.GLOBAL_RECHARGE,
+            PKG_OPTION.R_CLOSED
+        );
+
+        if( s_Global_Recharge = PKG_OPTION.R_OPENED ) then
+            begin
+                select
+                    nvl(sum(charge_amount), 0)
+                into
+                    n_Tmp_Total_Charge
+                from
+                    LOG_USER_FUND_DETAIL t
+                where
+                    game_id = n_Tmp_Game_ID and
+                    user_id = n_Tmp_User_ID and
+                    subject_id = n_Tmp_Subject_ID;
+            exception
+                when NO_DATA_FOUND then
+                    n_Tmp_Total_Charge := 0;
+            end;
+        else
+            begin
+                select
+                    nvl(sum(charge_amount), 0)
+                into
+                    n_Tmp_Total_Charge
+                from
+                    LOG_USER_FUND_DETAIL t
+                where
+                    game_id = n_Tmp_Game_ID and
+                    user_id = n_Tmp_User_ID and
+                    rating_id = n_Gateway_ID and
+                    subject_id = n_Tmp_Subject_ID;
+            exception
+                when NO_DATA_FOUND then
+                    n_Tmp_Total_Charge := 0;
+            end;
+        end if;
+        v_Balance_Info.Extend;
+        v_Balance_Info(n_Ret_Balance_Count*2 + 1) := n_Tmp_Subject_ID;
+        v_Balance_Info.Extend;
+        v_Balance_Info(n_Ret_Balance_Count*2 + 2) := n_Tmp_Total_Charge;
+        n_Ret_Balance_Count := n_Ret_Balance_Count + 1;
+        v_Ret_Balance_Info :=v_Balance_Info;
+        n_Result := PKG_UTIL.S_SUCCESS;
+    <<ExitError>>
+        return n_Result;
+    end;
+============================================================================================================================================================================
+==================================================================== PKG_GATEWAY 包新增function ==================================================================================
+
+
+PKG_GATEWAY
+
+function GWDataReportAdapt(
+        n_Game_ID            in number,
+        n_Gateway_ID         in number,
+        n_Server_ID          in number,
+        n_Data_Count         in number,
+        v_Gateway_Data       in varchar2
+    ) return integer;
+
+	
+	function GWDataReportAdapt(
+        n_Game_ID            in number,
+        n_Gateway_ID         in number,
+        n_Server_ID          in number,
+        n_Data_Count         in number,
+        v_Gateway_Data       in varchar2
+    ) return integer is
+        n_Result       integer := PKG_UTIL.E_ERROR;
+        n_RetCode      integer := PKG_UTIL.E_ERROR;
+        v_Gateway_Data_temp PKG_UTIL.number_list;
+    begin
+        if (
+            (n_Game_ID    is null) or
+            (n_Gateway_ID is null) or
+            (n_Server_ID  is null) or
+            (n_Data_Count is null)
+        ) then
+            n_Result := PKG_UTIL.E_PARAMETER_ERROR;
+            goto ExitError;
+        end if;
+        --调用字符串转数组方法
+        v_Gateway_Data_temp := PKG_UTIL.strToNumberList(v_Gateway_Data, '$');
+        for i in 1..v_Gateway_Data_temp.COUNT loop
+            exit when i > n_Data_Count;
+            if (v_Gateway_Data_temp(2*i - 1) = 1) then -- Online-Count
+                n_RetCode := PKG_LOG.logOnlineCount(
+                    n_Game_ID,
+                    n_Gateway_ID,
+                    n_Server_ID,
+                    v_Gateway_Data_temp(2*i)
+                );
+            elsif(v_Gateway_Data_temp(2*i - 1) = 8) then
+                n_RetCode := PKG_LOG.logActivityOnlineCount(n_Game_ID, n_Gateway_ID, v_Gateway_Data_temp(2*i - 1), v_Gateway_Data_temp(2*i));
+            end if;
+        end loop;
+
+        n_Result := PKG_UTIL.S_SUCCESS;
+    <<ExitError>>
+        return n_Result;
+    end;
+	
+==================================================================================================================================================================================
+====================================================== PKG_UTIL 包新增function =====================================================================================================
+
+PKG_UTIL
+
+--新增方法，字符串转化成数值型数据
+    function strToNumberList(
+         in_str     in VARCHAR2,  --原始字符串
+         in_sep     in VARCHAR2  --分隔符
+    )return pkg_util.number_list;
+	
+	
+function strToNumberList(
+    in_str in VARCHAR2,
+    in_sep in VARCHAR2
+  ) return pkg_util.number_list is
+   n_Result  integer := PKG_UTIL.E_ERROR;
+   --分割字符串位置索引
+   v_sep_pos PLS_INTEGER;
+   --存储分割后的字符串数组
+   v_str_array pkg_util.number_list;
+   --substr起始索引
+   v_start_idx PLS_INTEGER:=1;
+   n_arr_idx PLS_INTEGER:=1;
+
+ begin
+   begin
+     v_sep_pos:=instr(in_str,in_sep);
+     WHILE(v_sep_pos>0)
+     LOOP
+        v_str_array(n_arr_idx):=substr(in_str,v_start_idx,v_sep_pos-v_start_idx);
+        v_start_idx:=v_sep_pos+1;
+        v_sep_pos:=instr(in_str,in_sep,v_start_idx);
+        n_arr_idx := n_arr_idx + 1;
+     END LOOP;
+     if(n_arr_idx > 1)then
+        --n_arr_idx := n_arr_idx + 1; 
+        v_str_array(n_arr_idx) := substr(in_str,v_start_idx,length(in_str)-v_start_idx+1);
+     else
+       v_str_array(n_arr_idx) := in_str;
+     end if;
+     return v_str_array;
+   exception
+      when others then
+          goto ExitError;
+   end;
+   
+    <<ExitError>>
+   return v_str_array;
+end;
+   
+==========================================================================================================================================================================
+============================================================================================================================================================================
+
+
+====================================================================================================================================================================================
+=================================================================== PKG_ROLE 包新增function ==================================================================================================
+
+function enterGameEx5Adapt(
+        n_Game_ID           in  number,
+        n_Gateway_ID        in  number,
+        n_Server_ID         in  number,
+        n_User_ID           in  number,
+        n_Role_ID           in  number,
+        n_Role_Level        in  number,
+        n_Role_Gender       in  number,
+        n_Occupation_ID     in  number,
+        n_Corps_ID          in  number,
+        n_Community_ID      in  number,
+        n_Client_Port       in  number,
+        n_Client_IP         in  number,
+        n_Client_Type       in  number,
+        s_MAC               in  varchar2,
+        s_Hardware_SN1      in  varchar2,
+        s_Hardware_SN2      in  varchar2,
+        s_Uddi              in  varchar2,
+        s_Model_Version     in  varchar2,
+        s_Ldid              in  varchar2,
+        s_Province_Code     in  varchar2,
+        s_City_Code         in  varchar2,
+        s_Country_Code      in  varchar2,
+        n_Max_Balance_Count in  number,
+
+        n_Ret_Balance_Count out number,
+        v_Ret_Balance_Info  out number_list
+    ) return integer;
+
+function enterGameEx5Adapt(
+        n_Game_ID           in  number,
+        n_Gateway_ID        in  number,
+        n_Server_ID         in  number,
+        n_User_ID           in  number,
+        n_Role_ID           in  number,
+        n_Role_Level        in  number,
+        n_Role_Gender       in  number,
+        n_Occupation_ID     in  number,
+        n_Corps_ID          in  number,
+        n_Community_ID      in  number,
+        n_Client_Port       in  number,
+        n_Client_IP         in  number,
+        n_Client_Type       in  number,
+        s_MAC               in  varchar2,
+        s_Hardware_SN1      in  varchar2,
+        s_Hardware_SN2      in  varchar2,
+        s_Uddi              in  varchar2,
+        s_Model_Version     in  varchar2,
+        s_Ldid              in  varchar2,
+        s_Province_Code     in  varchar2,
+        s_City_Code         in  varchar2,
+        s_Country_Code      in  varchar2,
+        n_Max_Balance_Count in  number,
+
+        n_Ret_Balance_Count out number,
+        v_Ret_Balance_Info  out number_list
+    ) return integer  is
+        n_Result        integer := PKG_UTIL.E_ERROR;
+        n_RetCode       integer := PKG_UTIL.E_ERROR;
+
+        n_Tmp_User_ID          UMS_ROLE.user_id%TYPE;
+        n_Tmp_Game_ID          UMS_ROLE.game_id%TYPE := 0;
+        n_Tmp_Gateway_ID       UMS_ROLE.gateway_id%TYPE;
+        n_Tmp_Role_State       UMS_ROLE.role_state%TYPE;
+        n_Tmp_Enter_Time       date := sysdate;
+        n_Tmp_Login_ID         LOG_RECORD_DETAIL.login_id%TYPE;
+
+        n_Tmp_Adult_Flag       number := 1;
+        n_Tmp_Remain_Seconds   number := PKG_UTIL.DF_MAX_VALUABLE_SECONDS;
+        s_Role_GW_Check        SYS_OPTION.option_value%type;
+        n_Last_Log_err         number := 0;
+        n_Last_Gateway_ID      LOG_RECORD_DETAIL.gateway_id%TYPE := 0;
+        n_Last_Server_ID       LOG_RECORD_DETAIL.server_id%TYPE := 0;
+        s_Last_Province_Code   LOG_RECORD_DETAIL.province_code%TYPE := '其它';
+        s_Last_City_Code       LOG_RECORD_DETAIL.city_code%TYPE := '其它';
+        n_Tmp_Total_Charge     number(10) := 0;
+
+        s_Global_Recharge    SYS_OPTION.option_value%type;
+        n_Tmp_Subject_ID     UMS_USER_FUND.subject_id%TYPE;
+        s_Tmp_Major_Subject  SYS_OPTION.option_value%TYPE;
+        
+        v_Balance_Info number_list :=number_list();
+     begin
+        -- Parameter Validation.
+        if (
+            (n_Game_ID           is null) or
+            (n_Gateway_ID        is null) or
+            (n_Server_ID         is null) or
+            (n_User_ID           is null) or
+            (n_Role_ID           is null) or
+            (n_Role_Level        is null) or
+            (n_Client_Port       is null) or
+            (n_Client_IP         is null) or
+            (n_Client_Type       is null) or
+            (s_Province_Code     is null) or
+            (s_City_Code         is null) or
+            (n_Max_Balance_Count is null) or
+            (n_Max_Balance_Count <  1   )
+        ) then
+            n_Result := PKG_UTIL.E_PARAMETER_ERROR;
+            goto ExitError;
+        end if;
+
+        n_Ret_Balance_Count := 0;
+
+        -- check whether the MSG_ENTER_GAME is legal.
+        begin
+            select
+                user_id,       role_state,       login_id,
+                game_id,       gateway_id
+            into
+                n_Tmp_User_ID, n_Tmp_Role_State, n_Tmp_Login_ID,
+                n_Tmp_Game_ID, n_Tmp_Gateway_ID
+            from
+                UMS_ROLE
+            where
+                role_id    = n_Role_ID;
+        exception
+            when NO_DATA_FOUND then
+                n_Result := PKG_UTIL.E_ROLE_NOT_EXIST;
+                goto ExitError;
+            when TOO_MANY_ROWS then
+                n_Result := PKG_UTIL.E_ROLE_DUPLICATED;
+                goto ExitError;
+        end;
+
+        -- check whether the role has been deleted.
+        if (n_Tmp_Role_State = PKG_UTIL.DF_ROLE_STATE_DELETED) then
+            n_Result := PKG_UTIL.E_ROLE_DELETED;
+            goto ExitError;
+        -- check whether first login.
+        end if;
+
+        s_Role_GW_Check := PKG_OPTION.getOptionValue(
+            n_Tmp_Game_ID,
+            PKG_OPTION.ROLE_GW_CHECK,
+            PKG_OPTION.R_OPENED
+        );
+
+        if (s_Role_GW_Check = PKG_OPTION.R_OPENED) then
+            if(n_Tmp_Gateway_ID <> n_Gateway_ID) then
+                n_Result := PKG_UTIL.E_ROLE_NOT_EXIST;
+                goto ExitError;
+            end if;
+        else
+            -- 角色可能不在其本身的网关登录，需要检测目标网关是否存在
+            n_RetCode := PKG_GATEWAY.isGatewayIDExisted(n_Tmp_Game_ID, n_Gateway_ID);
+
+            if (n_RetCode <> PKG_UTIL.S_SUCCESS) then
+                n_Result := n_RetCode;
+                goto ExitError;
+            end if;
+        end if;
+
+        -- calculate indulgence time.
+        n_RetCode := PKG_INDULGENCE.onEnter(
+            n_Tmp_Game_ID,
+            n_Tmp_User_ID,
+            n_Gateway_ID,
+            n_Tmp_Adult_Flag,
+            n_Tmp_Remain_Seconds
+        );
+
+        if (n_RetCode <> PKG_UTIL.S_SUCCESS) then
+            n_Result := n_RetCode;
+            goto ExitError;
+        end if;
+
+        -- return indulgence time.
+        if (n_Tmp_Adult_Flag = 0) then
+	    v_Balance_Info.Extend;
+            v_Balance_Info(1) := PKG_UTIL.DF_SUBJECT_ID_VALUABLE_TIME;
+	    v_Balance_Info.Extend;
+            v_Balance_Info(2) := n_Tmp_Remain_Seconds;
+            n_Ret_Balance_Count := 1;
+        end if;
+
+        -- Do inner leaveGame.
+        if (n_Tmp_Login_ID > 0) then
+            update
+                LOG_RECORD_DETAIL
+            set
+                logout_time = n_Tmp_Enter_Time,
+                role_level  = n_Role_Level,
+                money1      = 0,
+                money2      = 0,
+                experience  = 0
+            where
+                login_id = n_Tmp_Login_ID
+            returning
+                gateway_id,             server_id,
+                province_code,          city_code
+            into
+                n_Last_Gateway_ID,      n_Last_Server_ID,
+                s_Last_Province_Code,   s_Last_City_Code;
+
+            -- set login_id to zero.
+            n_Tmp_Login_ID := 0;
+            n_Last_Log_err := 1;
+        end if;
+
+        --- Perhaps we should record the last IP/Port Address and login time of the role
+        --- if role exists.
+        n_RetCode := PKG_LOG.logLoginEx1(
+            n_Tmp_Game_ID,
+            n_Gateway_ID,
+            n_Server_ID,
+            n_Tmp_User_ID,
+            n_Role_ID,
+            n_Role_Level,
+            n_Tmp_Enter_Time,
+            n_Client_IP,
+            n_Client_Port,
+            n_Client_Type,
+            s_MAC,
+            s_Hardware_SN1,
+            s_Hardware_SN2,
+            s_Uddi,
+            s_Model_Version,
+            s_Ldid,
+            s_Province_Code,
+            s_City_Code,
+
+            n_Tmp_Login_ID
+        );
+
+        if (n_Tmp_Login_ID is null) then
+            n_Tmp_Login_ID := 0;
+        end if;
+
+        if (n_Tmp_Role_State = PKG_UTIL.DF_ROLE_STATE_VIRGIN) then
+            n_RetCode := PKG_LOG.logRoleFirstLogin(
+                n_Tmp_Game_ID,
+                n_Role_ID,
+                n_Tmp_User_ID,
+                n_Gateway_ID,
+                n_Tmp_Enter_Time,
+                n_Client_IP,
+                s_Province_Code,
+                s_City_Code,
+                s_MAC
+            );
+
+            -- if log recorded, update role_state to `normal'.
+            if (n_RetCode = PKG_UTIL.S_SUCCESS) then
+                update
+                    UMS_ROLE
+                set
+                    role_state = PKG_UTIL.DF_ROLE_STATE_NORMAL
+                where
+                    game_id = n_Tmp_Game_ID and
+                    role_id = n_Role_ID;
+            end if;
+        end if;
+
+        -- update log_id record.
+        update
+            UMS_ROLE
+        set
+            login_id = n_Tmp_Login_ID
+        where
+            role_id = n_Role_ID
+        and
+            game_id = n_Tmp_Game_ID;
+
+        -- plus `regional-online-role-count'.
+        -- 上次登录未正常退出时，减去原网关在线人数
+        if (n_Last_Log_err = 1) then
+            n_RetCode := PKG_LOG.logRTOnlineStat(
+                n_Tmp_Game_ID,
+                n_Last_Gateway_ID,
+                n_Last_Server_ID,
+                s_Last_Province_Code,
+                s_Last_City_Code,
+                -1
+            );
+        end if;
+
+        n_RetCode := PKG_LOG.logRTOnlineStat(
+            n_Tmp_Game_ID,
+            n_Gateway_ID,
+            n_Server_ID,
+            s_Province_Code,
+            s_City_Code,
+            1
+        );
+
+        s_Tmp_Major_Subject := PKG_OPTION.getOptionValue(
+                    n_Tmp_Game_ID,
+                    PKG_OPTION.MAJOR_SUBJECT,
+                    null
+                    );
+
+        if (s_Tmp_Major_Subject is null) then
+            return PKG_UTIL.E_OPTION_CODE_NOT_EXIST;
+        end if;
+
+        if (s_Tmp_Major_Subject = PKG_OPTION.T_SUBJECT3) then
+            n_Tmp_Subject_ID := 3;
+        elsif (s_Tmp_Major_Subject = PKG_OPTION.T_SUBJECT5) then
+            n_Tmp_Subject_ID := 5;
+        else
+            return PKG_UTIL.E_OPTION_CODE_NOT_EXIST;
+        end if;
+
+        s_Global_Recharge := PKG_OPTION.getOptionValue(
+            n_Tmp_Game_ID,
+            PKG_OPTION.GLOBAL_RECHARGE,
+            PKG_OPTION.R_CLOSED
+        );
+
+        if( s_Global_Recharge = PKG_OPTION.R_OPENED ) then
+            begin
+                select
+                    nvl(sum(charge_amount), 0)
+                into
+                    n_Tmp_Total_Charge
+                from
+                    LOG_USER_FUND_DETAIL t
+                where
+                    game_id = n_Tmp_Game_ID and
+                    user_id = n_Tmp_User_ID and
+                    subject_id = n_Tmp_Subject_ID;
+            exception
+                when NO_DATA_FOUND then
+                    n_Tmp_Total_Charge := 0;
+            end;
+        else
+            begin
+                select
+                    nvl(sum(charge_amount), 0)
+                into
+                    n_Tmp_Total_Charge
+                from
+                    LOG_USER_FUND_DETAIL t
+                where
+                    game_id = n_Tmp_Game_ID and
+                    user_id = n_Tmp_User_ID and
+                    rating_id = n_Gateway_ID and
+                    subject_id = n_Tmp_Subject_ID;
+            exception
+                when NO_DATA_FOUND then
+                    n_Tmp_Total_Charge := 0;
+            end;
+        end if;
+	
+	v_Balance_Info.Extend;
+        v_Balance_Info(n_Ret_Balance_Count * 2 + 1) := n_Tmp_Subject_ID;
+	v_Balance_Info.Extend;
+        v_Balance_Info(n_Ret_Balance_Count * 2 + 2) := n_Tmp_Total_Charge;
+        n_Ret_Balance_Count := n_Ret_Balance_Count + 1;
+	v_Ret_Balance_Info :=v_Balance_Info;
+
+        n_Result := PKG_UTIL.S_SUCCESS;
+    <<ExitError>>
+        return n_Result;
+    end;
+
+==================================================================================================================================================================================
+=================================================================================================================================================================================
+

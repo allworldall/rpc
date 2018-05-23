@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+	xmlns:aop="http://www.springframework.org/schema/aop"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:task="http://www.springframework.org/schema/task"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.3.xsd
+	   http://www.springframework.org/schema/tx http://www.springframework.org/schema/tx/spring-tx-4.3.xsd
+	   http://www.springframework.org/schema/aop http://www.springframework.org/schema/aop/spring-aop-4.3.xsd
+	   http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.3.xsd
+	   http://www.springframework.org/schema/task http://www.springframework.org/schema/task/spring-task-4.3.xsd">
+    <!-- 注解扫描 -->
+    <context:component-scan base-package="com.linekong.erating.router"/>
+    <!-- 
+    <bean id="proto" class="com.linekong.rpc.serialize.protostuff.ProtostuffSerializer"></bean>
+    <bean class="com.linekong.rpc.net.common.NetRpcServerFactory">
+    		<constructor-arg name="port" value="7080"></constructor-arg>
+    		<constructor-arg name="serializer" ref="proto"></constructor-arg>
+    		<constructor-arg name="zkSwitch" value="false"></constructor-arg>
+    		<constructor-arg name="zkAddress" value="192.168.252.37:2181"></constructor-arg>
+    		<constructor-arg name="zkSessionTimeout" value="3600000"></constructor-arg>
+    </bean>
+     -->
+    <bean id="proto" class="com.linekong.rpc.serialize.protostuff.ProtostuffSerializer"></bean>
+    <bean class="com.linekong.rpc.net.common.NetPrcClientProxy">
+    		<constructor-arg name="serverAddress" value="192.168.84.2:8085"></constructor-arg>
+    		<constructor-arg name="serializer" ref="proto"></constructor-arg>
+    		<constructor-arg name="iface" value="com.linekong.erating.api.remote.GatewayTypeProtocolInterface"></constructor-arg>
+    		<constructor-arg name="timeout" value="60000"></constructor-arg>
+    </bean>
+    <bean class="com.linekong.rpc.net.common.NetPrcClientProxy">
+    		<constructor-arg name="serverAddress" value="192.168.84.2:8085"></constructor-arg>
+    		<constructor-arg name="serializer" ref="proto"></constructor-arg>
+    		<constructor-arg name="iface" value="com.linekong.erating.api.remote.AccountTypeProtocolInterface"></constructor-arg>
+    		<constructor-arg name="timeout" value="60000"></constructor-arg>
+    </bean>
+    <bean class="com.linekong.rpc.net.common.NetPrcClientProxy">
+    		<constructor-arg name="serverAddress" value="192.168.84.2:8085"></constructor-arg>
+    		<constructor-arg name="serializer" ref="proto"></constructor-arg>
+    		<constructor-arg name="iface" value="com.linekong.erating.api.remote.ActivityTypeProtocalInterface"></constructor-arg>
+    		<constructor-arg name="timeout" value="60000"></constructor-arg>
+    </bean>
+    <bean class="com.linekong.rpc.net.common.NetPrcClientProxy">
+    		<constructor-arg name="serverAddress" value="192.168.84.2:8085"></constructor-arg>
+    		<constructor-arg name="serializer" ref="proto"></constructor-arg>
+    		<constructor-arg name="iface" value="com.linekong.erating.api.remote.CashTypeProtocolInterface"></constructor-arg>
+    		<constructor-arg name="timeout" value="60000"></constructor-arg>
+    </bean>
+    <bean class="com.linekong.rpc.net.common.NetPrcClientProxy">
+    		<constructor-arg name="serverAddress" value="192.168.84.2:8085"></constructor-arg>
+    		<constructor-arg name="serializer" ref="proto"></constructor-arg>
+    		<constructor-arg name="iface" value="com.linekong.erating.api.remote.RoleTypeProtocolInterface"></constructor-arg>
+    		<constructor-arg name="timeout" value="60000"></constructor-arg>
+    </bean>
+    <!-- 二进制服务器初始化 -->
+     <bean class="com.linekong.rpc.net.common.NetBinaryServerFactory">
+    		<constructor-arg name="port" value="7080"></constructor-arg>
+    		<constructor-arg name="zkSwitch" value="false"></constructor-arg>
+    </bean>
+</beans>

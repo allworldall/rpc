@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="Maven: com.linekong.erating.api:linekong-erating-api:0.0.1-SNAPSHOT">
+    <CLASSES>
+      <root url="jar://$MAVEN_REPOSITORY$/com/linekong/erating/api/linekong-erating-api/0.0.1-SNAPSHOT/linekong-erating-api-0.0.1-20180427.050724-4.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$MAVEN_REPOSITORY$/com/linekong/erating/api/linekong-erating-api/0.0.1-SNAPSHOT/linekong-erating-api-0.0.1-20180427.050724-4-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$MAVEN_REPOSITORY$/com/linekong/erating/api/linekong-erating-api/0.0.1-SNAPSHOT/linekong-erating-api-0.0.1-20180427.050724-4-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
